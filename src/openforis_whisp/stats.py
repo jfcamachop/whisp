@@ -36,7 +36,7 @@ def whisp_formatted_stats_geojson_to_df(
     input_geojson_filepath: Path | str,
     external_id_column=None,
     remove_geom=False,
-    national_codes=None,
+    national_codes=["CO"],
     unit_type="ha",
 ) -> pd.DataFrame:
     """
@@ -675,7 +675,7 @@ def get_stats_feature(feature, img_combined, unit_type="ha"):
         reducer=ee.Reducer.sum(),
         geometry=feature.geometry(),
         scale=10,
-        maxPixels=1e10,
+        maxPixels=1e13,
         tileScale=8,
     )
 

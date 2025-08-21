@@ -129,6 +129,46 @@ def g_gft_nat_reg_prep():
     gft_nat_reg = gft_raw.eq(1)
     return gft_nat_reg.rename("GFT_naturally_regenerating")
 
+### DATASETS PERSONALIZADOS FORLAND
+
+# IDEAM FOREST 2024
+def nco_ideam_forest_latest_prep():
+    fnf_ideam_2024 = ee.Image("projects/ee-jfcamachopsoc/assets/bnb_ideam_2024") # Load the IDEAM Forest 2024 dataset
+    ideam_forest_2024 = fnf_ideam_2024.eq(1)  # Forest class is represented by the value 1
+    return ideam_forest_2024.rename("IDEAM_Bosque_2024")
+
+# GFC_TC_2024
+def g_glad_gfc_10pc_latest_prep():
+    gfc = ee.Image("UMD/hansen/global_forest_change_2024_v1_12")
+    gfc_treecover2000 = gfc.select(["treecover2000"])
+    gfc_loss2001_2024 = gfc.select(["lossyear"]).lte(24)
+    gfc_treecover2024 = gfc_treecover2000.where(gfc_loss2001_2024.eq(1), 0)
+    return gfc_treecover2024.gt(10).rename("GFC_TC_2024")
+
+
+# GLAD_Primary_2024
+def g_glad_pht_latest_prep():
+    primary_ht_forests2001_raw = ee.ImageCollection(
+        "UMD/GLAD/PRIMARY_HUMID_TROPICAL_FORESTS/v1"
+    )
+    primary_ht_forests2001 = (
+        primary_ht_forests2001_raw.select("Primary_HT_forests").mosaic().selfMask()
+    )
+    gfc = ee.Image("UMD/hansen/global_forest_change_2024_v1_12")
+    gfc_loss2001_2024 = gfc.select(["lossyear"]).lte(2024)
+    return primary_ht_forests2001.where(gfc_loss2001_2024.eq(1), 0).rename(
+        "GLAD_Primary_2024"
+    )
+
+# TMF_undist (undistrubed forest in 2024)
+def g_jrc_tmf_undisturbed_latest_prep():
+    TMF_undist_2024 = (
+        ee.ImageCollection("projects/JRC/TMF/v1_2024/AnnualChanges")
+        .select("Dec2024")
+        .mosaic()
+        .eq(1)
+    )  # update from https://github.com/forestdatapartnership/whisp/issues/42
+    return TMF_undist_2024.rename("TMF_undist_2024")
 
 #########################planted and plantation forests
 
@@ -145,13 +185,13 @@ def g_iiasa_planted_prep():
     return iiasa_PL.rename("IIASA_planted_plantation")
 
 
-#########################TMF regrowth in 2023
+#########################TMF regrowth in 2024
 def g_tmf_regrowth_prep():
     # Load the TMF Degradation annual product
     TMF_AC = ee.ImageCollection("projects/JRC/TMF/v1_2024/AnnualChanges").mosaic()
-    TMF_AC_2023 = TMF_AC.select("Dec2023")
+    TMF_AC_2023 = TMF_AC.select("Dec2024")
     Regrowth_TMF = TMF_AC_2023.eq(4)
-    return Regrowth_TMF.rename("TMF_regrowth_2023")
+    return Regrowth_TMF.rename("TMF_regrowth_2024")
 
 
 ############tree crops
@@ -469,6 +509,46 @@ def g_glad_gfc_loss_per_year_prep():
     return img_stack
 
 
+#IDEAM DEFO 2013 to IDEAM_< current year >
+
+def nco_ideam_def_per_year_prep():
+
+    """
+    Genera un stack de bandas de deforestación anual a partir de la
+    colección de IDEAM pre-cargada en GEE.
+    
+    Requisitos:
+    - Cada imagen en la colección cuenta con la propiedad 'year'. Al agregar una nueva imagen, para los años siguientes, asegúrese de incluir esta propiedad.
+    - Valor de píxel 2 = deforestación
+    
+    """
+
+    ideam_dataset = ee.ImageCollection("projects/ee-jfcamachopsoc/assets/defo_ideam_amazonia")
+
+    # Detect years available in the dataset
+    years = (
+        ideam_dataset.aggregate_array("year")
+        .distinct()
+        .sort()
+        .getInfo()
+    )
+
+    img_stack = None
+
+    for year in years:
+        # Filter image and create binary mask
+        ideam_def_year = ideam_dataset.filter(ee.Filter.eq("year", year)).mosaic()
+        def_mask = ideam_def_year.eq(2).rename(f"IDEAM_def_{year}")
+
+        # Layer stack
+        if img_stack is None:
+            img_stack = def_mask
+        else:
+            img_stack = img_stack.addBands(def_mask)
+
+    return img_stack
+
+
 # MODIS_fire_2000 to MODIS_fire_< current year >
 def g_modis_fire_prep():
     modis_fire = ee.ImageCollection("MODIS/061/MCD64A1")
@@ -772,6 +852,115 @@ def g_esa_fire_before_2020_prep():
         .gte(0)
         .rename("ESA_fire_before_2020")
     )
+
+# IDEAM_def_before_2020
+
+def nco_ideam_def_before_2020_prep():
+    """
+    Acummulated deforestation by IDEAM before 2020
+    """
+    ideam_dataset = ee.ImageCollection("projects/ee-jfcamachopsoc/assets/defo_ideam_amazonia")
+
+    # Filter images for years before 2020
+    before_2020= ideam_dataset.filter(ee.Filter.lte("year", 2020)) \
+        .map(lambda img: img.eq(2)) \
+        .max() \
+        .rename("IDEAM_def_before_2020")
+    return before_2020
+
+# IDEAM_def_after_2020
+
+def nco_ideam_def_after_2020_prep():
+    """
+    Acummulated deforestation by IDEAM after 2020
+    """
+    ideam_dataset = ee.ImageCollection("projects/ee-jfcamachopsoc/assets/defo_ideam_amazonia")
+
+    # Filter images for years after 2020
+    after_2020 = ideam_dataset.filter(ee.Filter.gt("year", 2020)) \
+        .map(lambda img: img.eq(2)) \
+        .max() \
+        .rename("IDEAM_def_after_2020")
+    return after_2020
+
+#### Trimester disturbance analysis based on IDEAM and RADD
+
+    #RADD Trimester disturbance analysis
+def g_radd_def_trim_prep():
+    from datetime import datetime, date
+
+    current_year = datetime.now().year
+    year_short = current_year % 100  # 25 para 2025
+
+    # Trimester definitions (start month, start day), (end month, end day)
+    trimestres = {
+        1: ((1, 1), (3, 31)),
+        2: ((4, 1), (6, 30)),
+        3: ((7, 1), (9, 30)),
+        4: ((10, 1), (12, 31)),
+    }
+
+    # Load RADD data
+    radd = ee.ImageCollection("projects/radar-wur/raddalert/v1")
+    radd_date = (
+        radd.filterMetadata("layer", "contains", "alert")
+        .select("Date")
+        .mosaic()
+    )
+
+    img_stack = None
+
+    for trim_number, ((sm, sd), (em, ed)) in trimestres.items():
+        # Calculate day of the year for start and end dates
+        start_doy = date(current_year, sm, sd).timetuple().tm_yday
+        end_doy = date(current_year, em, ed).timetuple().tm_yday
+
+        start_code = year_short * 1000 + start_doy
+        end_code = year_short * 1000 + end_doy
+
+        # If trhimester has not starte yet, create an empty mask
+        if date.today() < date(current_year, sm, sd):
+            mask = ee.Image(0).updateMask(ee.Image(0))
+        else:
+            mask = (
+                radd_date.updateMask(radd_date.gte(start_code))
+                .updateMask(radd_date.lte(end_code))
+                .gt(0)
+            )
+
+        mask = mask.rename(f"RADD_def_trimes_{trim_number}_currentyear")
+        img_stack = mask if img_stack is None else img_stack.addBands(mask)
+
+    return img_stack
+
+
+    #IDEAM Trimester disturbance analysis
+
+def nco_ideam_def_trim_prep():
+    """
+    Devuelve 4 bandas binarias (0/1) —una por trimestre— a partir del asset
+    de IDEAM pintado en GEE. Whisp luego convierte a m² y a ha automáticamente.
+    """
+    import ee
+
+    fc = ee.FeatureCollection("projects/ee-jfcamachopsoc/assets/atd_ideam_trimes_current_year")
+
+    img_stack = None
+
+    for t in [1, 2, 3, 4]:
+        # Filtrar por trimestre (campo numérico)
+        fc_trim = fc.filter(ee.Filter.eq("Trimestre", t))
+
+        # Pintar polígonos como máscara binaria 0/1.
+        # Si fc_trim está vacío, paint() produce una imagen vacía (mascarada).
+        mask = ee.Image().paint(fc_trim, 1).selfMask()
+
+        # Renombrar la banda para identificar el trimestre
+        mask = mask.rename(f"IDEAM_def_trimes_{t}_currentyear")
+
+        img_stack = mask if img_stack is None else img_stack.addBands(mask)
+
+    return img_stack
 
 
 #########################logging concessions
