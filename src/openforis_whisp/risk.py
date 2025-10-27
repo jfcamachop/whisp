@@ -112,6 +112,7 @@ def whisp_risk(
     high_name: str = "yes",
     explicit_unit_type: str = None,
     national_codes: list[str] = None,  # List of ISO2 country codes to filter by
+    custom_bands_info: dict = None,  # New parameter for custom band risk info
 ) -> data_lookup_type:
     """
     Adds the EUDR (European Union Deforestation Risk) column to the DataFrame based on indicator values.
@@ -134,25 +135,42 @@ def whisp_risk(
         high_name (str, optional): Value shown in table if more than the threshold. Defaults to "yes".
         explicit_unit_type (str, optional): Override the autodetected unit type ('ha' or 'percent').
                                       If not provided, will detect from dataframe 'unit' column.
+        custom_bands_info (dict, optional): Custom band risk information. Dict format:
+            {
+                'band_name': {
+                    'theme': 'treecover',  # or 'commodities', 'disturbance_before', 'disturbance_after'
+                    'theme_timber': 'primary',  # or 'naturally_reg_2020', 'planted_plantation_2020', etc.
+                    'use_for_risk': 1,  # 0 or 1
+                    'use_for_risk_timber': 1,  # 0 or 1
+                }
+            }
+            If None, custom bands won't be included in risk calculations.
 
     Returns:
-        data_lookup_type: DataFrame with added 'EUDR_risk' column.
+        data_lookup_type: DataFrame with added risk columns.
     """
-    # Determine the unit type to use based on input data and overrid
+    # Determine the unit type
     unit_type = detect_unit_type(df, explicit_unit_type)
-
     print(f"Using unit type: {unit_type}")
 
     lookup_df_copy = lookup_gee_datasets_df.copy()
 
-    # filter by national codes (even if None - this removes all country columns unless specified)
+    # Add custom bands to lookup if provided
+    if custom_bands_info:
+        lookup_df_copy = add_custom_bands_info_to_lookup(
+            lookup_df_copy, custom_bands_info, df.columns
+        )
+        print(f"Including custom bands: {list(custom_bands_info.keys())}")
+    if national_codes:
+        print(f"Including additional national data for: {national_codes}")
+    # Filter by national codes
     filtered_lookup_gee_datasets_df = filter_lookup_by_country_codes(
         lookup_df=lookup_df_copy,
         filter_col="ISO2_code",
         national_codes=national_codes,
     )
 
-    # Rest of the function remains the same, but pass unit_type to add_indicators
+    # Get indicator columns (now includes custom bands)
     if ind_1_input_columns is None:
         ind_1_input_columns = get_cols_ind_01_treecover(filtered_lookup_gee_datasets_df)
     if ind_2_input_columns is None:
@@ -393,7 +411,7 @@ def add_eudr_risk_timber_col(
     """
 
     for index, row in df.iterrows():
-        # If there is a commodity in 2020 (ind_2_name) 
+        # If there is a commodity in 2020 (ind_2_name)
         # OR if there is planted-plantation in 2020 (ind_7_name) AND no agriculture in 2023 (ind_10_name), set EUDR_risk_timber to "low"
         if row[ind_2_name] == "yes" or (
             row[ind_7_name] == "yes" and row[ind_10_name] == "no"
@@ -411,7 +429,7 @@ def add_eudr_risk_timber_col(
             ind_8_name
         ] == "yes":
             df.at[index, "risk_timber"] = "high"
-        # No data yet on OWL conversion 
+        # No data yet on OWL conversion
         # If primary or naturally regenerating or planted forest in 2020 and OWL in 2023, set EUDR_risk to high
         # elif (row[ind_5_name] == "yes" or row[ind_6_name] == "yes" or row[ind_7_name] == "yes") and row[ind_10_name] == "yes":
         #    df.at[index, 'EUDR_risk_timber'] = "high"
@@ -454,7 +472,6 @@ def add_indicators(
     return df
 
 
-# Update add_indicator_column to use the unit_type parameter
 def add_indicator_column(
     df: data_lookup_type,
     input_columns: list[str],
@@ -463,49 +480,51 @@ def add_indicator_column(
     low_name: str = "no",
     high_name: str = "yes",
     sum_comparison: bool = False,
-    unit_type: str = None,  # unit_type parameter
+    unit_type: str = None,
 ) -> data_lookup_type:
-    """
-    Add a new column to the DataFrame based on the specified columns, threshold, and comparison sign.
+    """Add a new column to the DataFrame based on the specified columns, threshold, and comparison sign."""
 
-    Parameters:
-        df (data_lookup_type): The pandas DataFrame to which the column will be added.
-        input_columns (list): List of column names to check for threshold.
-        threshold (float): The threshold value to compare against.
-        new_column_name (str): The name of the new column to be added.
-        The '>' sign is used for comparisons.
-        When 'sum comparison' == True, then the threshold is compared to the sum of all those listed in 'input_columns', as opposed to when Flalse, when each column in the list is compared to the threshold individually
-        low_name (str): The name for the value when below or equal to threshold (default is 'no').
-        high_name (str): The name for the value when above threshold (default is 'yes').
-        sum_comparison (bool): If True, sum all values in input_columns and compare to threshold (default is False).
-        unit_type (str): Whether values are in "ha" or "percent".
-
-    Returns:
-        data_lookup_type: The DataFrame with the new column added.
-    """
     # Create a new column and initialize with low_name
     new_column = pd.Series(low_name, index=df.index, name=new_column_name)
 
-    # Default behavior: use '>' for single column comparison
     if sum_comparison:
         # Sum all values in specified columns and compare to threshold
         sum_values = df[input_columns].sum(axis=1)
         new_column[sum_values > threshold] = high_name
     else:
-        # Check if any values in specified columns are above the threshold and update the new column accordingly
+        # Check if any values in specified columns are above the threshold
         for col in input_columns:
-            # So that threshold is always in percent, if outputs are in ha, the code converts to percent (based on dividing by the geometry_area_column column.
-            # Clamping is needed due to differences in decimal places (meaning input values may go just over 100)
             if unit_type == "ha":
                 df[geometry_area_column] = pd.to_numeric(
                     df[geometry_area_column], errors="coerce"
                 )
-                val_to_check = clamp(
-                    ((df[col] / df[geometry_area_column]) * 100), 0, 100
-                )
+
+                # Handle points (Area = 0) separately
+                is_point = df[geometry_area_column] == 0
+
+                # For points: any value > 0 exceeds threshold
+                point_mask = is_point & (df[col] > 0)
+                new_column[point_mask] = high_name
+
+                # For polygons: convert to percentage and check threshold
+                polygon_mask = ~is_point
+                if polygon_mask.any():
+                    val_to_check = clamp(
+                        (
+                            (
+                                df.loc[polygon_mask, col]
+                                / df.loc[polygon_mask, geometry_area_column]
+                            )
+                            * 100
+                        ),
+                        0,
+                        100,
+                    )
+                    new_column[polygon_mask & (val_to_check > threshold)] = high_name
             else:
+                # For percentage values, use direct comparison
                 val_to_check = df[col]
-            new_column[val_to_check > threshold] = high_name
+                new_column[val_to_check > threshold] = high_name
 
     # Concatenate the new column to the DataFrame
     df = pd.concat([df, new_column], axis=1)
@@ -769,3 +788,61 @@ def clamp(
 def check_range(value: float) -> None:
     if not (0 <= value <= 100):
         raise ValueError("Value must be between 0 and 100.")
+
+
+def add_custom_bands_info_to_lookup(
+    lookup_df: pd.DataFrame, custom_bands_info: dict, df_columns: list
+) -> pd.DataFrame:
+    """
+    Add custom bands to the lookup DataFrame for risk calculations.
+
+    Parameters
+    ----------
+    lookup_df : pd.DataFrame
+        Original lookup DataFrame
+    custom_bands_info : dict
+        Custom band definitions with risk info
+    df_columns : list
+        List of columns in the actual data DataFrame
+
+    Returns
+    -------
+    pd.DataFrame
+        Lookup DataFrame with custom bands added
+    """
+    custom_rows = []
+
+    for band_name, band_info in custom_bands_info.items():
+        # Only add bands that actually exist in the DataFrame
+        if band_name in df_columns:
+            custom_row = {
+                "name": band_name,  # Use the band name as provided
+                "theme": band_info.get(
+                    "theme", pd.NA
+                ),  # default to empty if not provided
+                "theme_timber": band_info.get(
+                    "theme_timber", pd.NA
+                ),  # default to empty if not provided
+                "use_for_risk": band_info.get(
+                    "use_for_risk", 0
+                ),  # default to 0 if not provided
+                "use_for_risk_timber": band_info.get(
+                    "use_for_risk_timber", 0
+                ),  # default to 0 if not provided
+                "exclude_from_output": 0,  # 0 here is so we don't exclude custom bands
+                "ISO2_code": pd.NA,  # Global, i.e., empty string, by default
+                # Add other required columns with defaults
+                "col_type": "float64",  # default to float64 if not provided
+                "is_nullable": 1,
+                "is_required": 0,
+                "order": 9999,  # Put at end unless specified otherwise
+                "corresponding_variable": pd.NA,  # not necessary for custom bands
+            }
+            custom_rows.append(custom_row)
+
+    if custom_rows:
+        custom_df = pd.DataFrame(custom_rows)
+        # Combine with original lookup
+        lookup_df = pd.concat([lookup_df, custom_df], ignore_index=True)
+
+    return lookup_df

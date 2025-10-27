@@ -27,7 +27,10 @@ from .data_conversion import (
     # convert_csv_to_geojson,
     convert_df_to_geojson,
 )  # copied functions from whisp-api and geemap (accessed 2024) to avoid dependency
-from .reformat import validate_dataframe_using_lookups
+from .reformat import (
+    validate_dataframe_using_lookups,
+    validate_dataframe_using_lookups_flexible,
+)
 
 # NB functions that included "formatted" in the name apply a schema for validation and reformatting of the output dataframe. The schema is created from lookup tables.
 
@@ -38,6 +41,8 @@ def whisp_formatted_stats_geojson_to_df(
     remove_geom=False,
     national_codes=["CO"],
     unit_type="ha",
+    whisp_image=None,
+    custom_bands=None,  # New parameter
 ) -> pd.DataFrame:
     """
         Main function for most users.
@@ -65,6 +70,15 @@ def whisp_formatted_stats_geojson_to_df(
             List of ISO2 country codes to include national datasets.
         unit_type: str, optional
             Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+        whisp_image : ee.Image, optional
+            Pre-combined multiband Earth Engine Image containing all Whisp datasets.
+            If provided, this image will be used instead of combining datasets based on national_codes.
+            If None, datasets will be combined automatically using national_codes parameter.
+        custom_bands : list or dict, optional
+            Custom band information for extra columns. Can be:
+            - List of band names: ['Aa_test', 'elevation']
+            - Dict with types: {'Aa_test': 'float64', 'elevation': 'float32'}
+            - None: preserves all extra columns automatically
 
     Returns
         -------
@@ -78,7 +92,9 @@ def whisp_formatted_stats_geojson_to_df(
         external_id_column,
         remove_geom,
         national_codes=national_codes,
-        unit_type=unit_type,  # Fixed: now it's a keyword argument
+        unit_type=unit_type,
+        whisp_image=whisp_image,
+        custom_bands=custom_bands,  # Pass through
     )
 
 
@@ -89,6 +105,7 @@ def whisp_formatted_stats_geojson_to_geojson(
     geo_column: str = "geo",
     national_codes=None,
     unit_type="ha",
+    whisp_image=None,  # New parameter
 ):
     """
     Convert a formatted GeoJSON file with a geo column into a GeoJSON file containing Whisp stats.
@@ -107,6 +124,8 @@ def whisp_formatted_stats_geojson_to_geojson(
         List of ISO2 country codes to include national datasets.
     unit_type : str, optional
         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
 
     Returns
     -------
@@ -117,6 +136,7 @@ def whisp_formatted_stats_geojson_to_geojson(
         external_id_column=external_id_column,
         national_codes=national_codes,
         unit_type=unit_type,
+        whisp_image=whisp_image,  # Pass through
     )
     # Convert the df to GeoJSON
     convert_df_to_geojson(df, output_geojson_filepath, geo_column)
@@ -131,6 +151,7 @@ def whisp_formatted_stats_ee_to_geojson(
     geo_column: str = "geo",
     national_codes=None,
     unit_type="ha",
+    whisp_image=None,  # New parameter
 ):
     """
     Convert an Earth Engine FeatureCollection to a GeoJSON file containing Whisp stats.
@@ -149,6 +170,8 @@ def whisp_formatted_stats_ee_to_geojson(
         List of ISO2 country codes to include national datasets.
     unit_type : str, optional
         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
     Returns
     -------
     None
@@ -159,6 +182,7 @@ def whisp_formatted_stats_ee_to_geojson(
         external_id_column,
         national_codes=national_codes,
         unit_type=unit_type,
+        whisp_image=whisp_image,  # Pass through
     )
 
     # Convert the df to GeoJSON
@@ -173,6 +197,8 @@ def whisp_formatted_stats_ee_to_df(
     remove_geom=False,
     national_codes=None,
     unit_type="ha",
+    whisp_image=None,
+    custom_bands=None,  # New parameter
 ) -> pd.DataFrame:
     """
     Convert a feature collection to a validated DataFrame with Whisp statistics.
@@ -189,6 +215,10 @@ def whisp_formatted_stats_ee_to_df(
         List of ISO2 country codes to include national datasets.
     unit_type : str, optional
         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
+    custom_bands : list or dict, optional
+        Custom band information for extra columns.
 
     Returns
     -------
@@ -202,11 +232,12 @@ def whisp_formatted_stats_ee_to_df(
         remove_geom,
         national_codes=national_codes,
         unit_type=unit_type,
+        whisp_image=whisp_image,
     )
 
-    # Pass national_codes to validation function to filter schema
-    validated_df = validate_dataframe_using_lookups(
-        df_stats, national_codes=national_codes
+    # Use flexible validation that handles custom bands
+    validated_df = validate_dataframe_using_lookups_flexible(
+        df_stats, national_codes=national_codes, custom_bands=custom_bands
     )
     return validated_df
 
@@ -220,6 +251,7 @@ def whisp_stats_geojson_to_df(
     remove_geom=False,
     national_codes=None,
     unit_type="ha",
+    whisp_image=None,  # New parameter
 ) -> pd.DataFrame:
     """
     Convert a GeoJSON file to a pandas DataFrame with Whisp statistics.
@@ -236,6 +268,8 @@ def whisp_stats_geojson_to_df(
         List of ISO2 country codes to include national datasets.
     unit_type : str, optional
         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
 
     Returns
     -------
@@ -250,6 +284,7 @@ def whisp_stats_geojson_to_df(
         remove_geom,
         national_codes=national_codes,
         unit_type=unit_type,
+        whisp_image=whisp_image,  # Pass through
     )
 
 
@@ -257,6 +292,7 @@ def whisp_stats_geojson_to_ee(
     input_geojson_filepath: Path | str,
     external_id_column=None,
     national_codes=None,
+    whisp_image=None,  # New parameter
 ) -> ee.FeatureCollection:
     """
     Convert a GeoJSON file to an Earth Engine FeatureCollection with Whisp statistics.
@@ -269,6 +305,8 @@ def whisp_stats_geojson_to_ee(
         The name of the external ID column, by default None.
     national_codes : list, optional
         List of ISO2 country codes to include national datasets.
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
 
     Returns
     -------
@@ -278,7 +316,10 @@ def whisp_stats_geojson_to_ee(
     feature_collection = convert_geojson_to_ee(str(input_geojson_filepath))
 
     return whisp_stats_ee_to_ee(
-        feature_collection, external_id_column, national_codes=national_codes
+        feature_collection,
+        external_id_column,
+        national_codes=national_codes,
+        whisp_image=whisp_image,  # Pass through
     )
 
 
@@ -288,6 +329,7 @@ def whisp_stats_geojson_to_geojson(
     external_id_column=None,
     national_codes=None,
     unit_type="ha",
+    whisp_image=None,  # New parameter
 ):
     """
     Convert a GeoJSON file to a GeoJSON object containing Whisp stats for the input ROI.
@@ -304,6 +346,8 @@ def whisp_stats_geojson_to_geojson(
         List of ISO2 country codes to include national datasets.
     unit_type : str, optional
         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
 
     Returns
     -------
@@ -318,6 +362,7 @@ def whisp_stats_geojson_to_geojson(
         external_id_column,
         national_codes=national_codes,
         unit_type=unit_type,
+        whisp_image=whisp_image,  # Pass through
     )
 
     # Convert the stats FeatureCollection to GeoJSON
@@ -333,6 +378,7 @@ def whisp_stats_geojson_to_drive(
     external_id_column=None,
     national_codes=None,
     unit_type="ha",
+    whisp_image=None,  # New parameter
 ):
     """
     Export Whisp statistics for a GeoJSON file to Google Drive.
@@ -347,6 +393,8 @@ def whisp_stats_geojson_to_drive(
         List of ISO2 country codes to include national datasets.
     unit_type : str, optional
         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
 
     Returns
     -------
@@ -364,6 +412,7 @@ def whisp_stats_geojson_to_drive(
             external_id_column,
             national_codes=national_codes,
             unit_type=unit_type,
+            whisp_image=whisp_image,  # Pass through
         )
 
     except Exception as e:
@@ -376,6 +425,7 @@ def whisp_stats_ee_to_ee(
     national_codes=None,
     unit_type="ha",
     keep_properties=None,
+    whisp_image=None,  # New parameter
 ):
     """
     Process a feature collection to get statistics for each feature.
@@ -389,6 +439,9 @@ def whisp_stats_ee_to_ee(
             - None: Remove all properties (default behavior)
             - True: Keep all properties
             - list: Keep only the specified properties
+        whisp_image (ee.Image, optional): Pre-combined multiband Earth Engine Image containing
+            all Whisp datasets. If provided, this image will be used instead of combining
+            datasets based on national_codes.
 
     Returns:
         ee.FeatureCollection: The output feature collection with statistics.
@@ -449,7 +502,10 @@ def whisp_stats_ee_to_ee(
         feature_collection = _keep_fc_properties(feature_collection, keep_properties)
 
     fc = get_stats(
-        feature_collection, national_codes=national_codes, unit_type=unit_type
+        feature_collection,
+        national_codes=national_codes,
+        unit_type=unit_type,
+        whisp_image=whisp_image,  # Pass through
     )
 
     return add_id_to_feature_collection(dataset=fc, id_name=plot_id_column)
@@ -478,6 +534,7 @@ def whisp_stats_ee_to_df(
     remove_geom=False,
     national_codes=None,
     unit_type="ha",
+    whisp_image=None,  # New parameter
 ) -> pd.DataFrame:
     """
     Convert a Google Earth Engine FeatureCollection to a pandas DataFrame and convert ISO3 to ISO2 country codes.
@@ -494,25 +551,36 @@ def whisp_stats_ee_to_df(
         List of ISO2 country codes to include national datasets.
     unit_type : str, optional
         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
 
     Returns
     -------
     df_stats : pd.DataFrame
         The dataframe containing the Whisp stats for the input ROI.
     """
+    # First, do the whisp processing to get the EE feature collection with stats
+    try:
+        stats_feature_collection = whisp_stats_ee_to_ee(
+            feature_collection,
+            external_id_column,
+            national_codes=national_codes,
+            unit_type=unit_type,
+            whisp_image=whisp_image,  # Pass through
+        )
+    except Exception as e:
+        print(f"An error occurred during Whisp stats processing: {e}")
+        raise e
+
+    # Then, convert the EE feature collection to DataFrame
     try:
         df_stats = convert_ee_to_df(
-            ee_object=whisp_stats_ee_to_ee(
-                feature_collection,
-                external_id_column,
-                national_codes=national_codes,
-                unit_type=unit_type,
-            ),
+            ee_object=stats_feature_collection,
             remove_geom=remove_geom,
         )
     except Exception as e:
         print(f"An error occurred during the conversion from EE to DataFrame: {e}")
-        return pd.DataFrame()  # Return an empty DataFrame in case of error
+        raise e
 
     try:
         df_stats = convert_iso3_to_iso2(
@@ -524,7 +592,56 @@ def whisp_stats_ee_to_df(
         print(f"An error occurred during the ISO3 to ISO2 conversion: {e}")
         return pd.DataFrame()  # Return an empty DataFrame in case of error
 
+    # NEW: Set area to 0 for point geometries
+    try:
+        df_stats = set_point_geometry_area_to_zero(df_stats)
+    except Exception as e:
+        print(f"An error occurred during point geometry area adjustment: {e}")
+        # Continue without the adjustment rather than failing completely
+
     return df_stats
+
+
+def set_point_geometry_area_to_zero(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Set the geometry area column to 0 for features with Point geometry type.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing geometry type and area columns
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with area set to 0 for Point geometries
+    """
+    # Check if required columns exist
+    if geometry_type_column not in df.columns:
+        print(
+            f"Warning: {geometry_type_column} column not found. Skipping area adjustment for points."
+        )
+        return df
+
+    if geometry_area_column not in df.columns:
+        print(
+            f"Warning: {geometry_area_column} column not found. Skipping area adjustment for points."
+        )
+        return df
+
+    # Create a copy to avoid modifying the original
+    df_modified = df.copy()
+
+    # Set area to 0 where geometry type is Point
+    point_mask = df_modified[geometry_type_column] == "Point"
+    df_modified.loc[point_mask, geometry_area_column] = 0.0
+
+    # Log the changes
+    num_points = point_mask.sum()
+    if num_points > 0:
+        print(f"Set area to 0 for {num_points} Point geometries")
+
+    return df_modified
 
 
 def whisp_stats_ee_to_drive(
@@ -532,6 +649,7 @@ def whisp_stats_ee_to_drive(
     external_id_column=None,
     national_codes=None,
     unit_type="ha",
+    whisp_image=None,  # New parameter
 ):
     """
      Export Whisp statistics for a feature collection to Google Drive.
@@ -546,6 +664,8 @@ def whisp_stats_ee_to_drive(
          List of ISO2 country codes to include national datasets.
     unit_type : str, optional
          Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+         Pre-combined multiband Earth Engine Image containing all Whisp datasets.
      Returns
      -------
      None
@@ -557,6 +677,7 @@ def whisp_stats_ee_to_drive(
                 external_id_column,
                 national_codes=national_codes,
                 unit_type=unit_type,
+                whisp_image=whisp_image,  # Pass through
             ),
             description="whisp_output_table",
             # folder="whisp_results",
@@ -574,29 +695,42 @@ def whisp_stats_ee_to_drive(
 
 
 # Get stats for a feature or feature collection
-def get_stats(feature_or_feature_col, national_codes=None, unit_type="ha"):
+def get_stats(
+    feature_or_feature_col, national_codes=None, unit_type="ha", whisp_image=None
+):
     """
-     Get stats for a feature or feature collection with optional filtering by national codes.
+    Get stats for a feature or feature collection with optional pre-combined image.
 
-     Parameters
-     ----------
-     feature_or_feature_col : ee.Feature or ee.FeatureCollection
-         The input feature or feature collection to analyze
-     national_codes : list, optional
-         List of ISO2 country codes to include national datasets
+    Parameters
+    ----------
+    feature_or_feature_col : ee.Feature or ee.FeatureCollection
+        The input feature or feature collection to analyze
+    national_codes : list, optional
+        List of ISO2 country codes to include national datasets.
+        Only used if whisp_image is None.
     unit_type : str, optional
-         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
-     Returns
-     -------
-     ee.FeatureCollection
-         Feature collection with calculated statistics
+        Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    whisp_image : ee.Image, optional
+        Pre-combined multiband Earth Engine Image containing all Whisp datasets.
+        If provided, this will be used instead of combining datasets based on national_codes.
+        If None, datasets will be combined automatically using national_codes parameter.
+    Returns
+    -------
+    ee.FeatureCollection
+        Feature collection with calculated statistics
     """
+
+    # Use provided image or combine datasets
+    if whisp_image is not None:
+        img_combined = whisp_image
+        print("Using provided whisp_image")
+    else:
+        img_combined = combine_datasets(national_codes=national_codes)
+        print(f"Combining datasets with national_codes: {national_codes}")
+
     # Check if the input is a Feature or a FeatureCollection
     if isinstance(feature_or_feature_col, ee.Feature):
-        # If the input is a Feature, call the server-side function for processing
-        print("feature")
-        # For a single feature, we need to combine datasets with the national_codes filter
-        img_combined = combine_datasets(national_codes=national_codes)
+        print("Processing single feature")
         output = ee.FeatureCollection(
             [
                 get_stats_feature(
@@ -605,9 +739,12 @@ def get_stats(feature_or_feature_col, national_codes=None, unit_type="ha"):
             ]
         )
     elif isinstance(feature_or_feature_col, ee.FeatureCollection):
-        # If the input is a FeatureCollection, call the server-side function for processing
+        print("Processing feature collection")
         output = get_stats_fc(
-            feature_or_feature_col, national_codes=national_codes, unit_type=unit_type
+            feature_or_feature_col,
+            national_codes=national_codes,
+            unit_type=unit_type,
+            img_combined=img_combined,  # Pass the image directly
         )
     else:
         output = "Check inputs: not an ee.Feature or ee.FeatureCollection"
@@ -615,28 +752,33 @@ def get_stats(feature_or_feature_col, national_codes=None, unit_type="ha"):
 
 
 # Get statistics for a feature collection
-def get_stats_fc(feature_col, national_codes=None, unit_type="ha"):
+def get_stats_fc(feature_col, national_codes=None, unit_type="ha", img_combined=None):
     """
-     Calculate statistics for a feature collection using Whisp datasets.
+    Calculate statistics for a feature collection using Whisp datasets.
 
-     Parameters
-     ----------
-     feature_col : ee.FeatureCollection
-         The input feature collection to analyze
-     national_codes : list, optional
-         List of ISO2 country codes (e.g., ["BR", "US"]) to include national datasets.
-         If provided, only national datasets for these countries and global datasets will be used.
-         If None (default), only global datasets will be used.
+    Parameters
+    ----------
+    feature_col : ee.FeatureCollection
+        The input feature collection to analyze
+    national_codes : list, optional
+        List of ISO2 country codes (e.g., ["BR", "US"]) to include national datasets.
+        If provided, only national datasets for these countries and global datasets will be used.
+        If None (default), only global datasets will be used.
+        Only used if img_combined is None.
     unit_type : str, optional
-         Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
-     Returns
-     -------
-     ee.FeatureCollection
-         Feature collection with calculated statistics
+        Whether to use hectares ("ha") or percentage ("percent"), by default "ha".
+    img_combined : ee.Image, optional
+        Pre-combined multiband image containing all Whisp datasets.
+        If provided, this will be used instead of combining datasets based on national_codes.
+    Returns
+    -------
+    ee.FeatureCollection
+        Feature collection with calculated statistics
     """
-    img_combined = combine_datasets(
-        national_codes=national_codes
-    )  # Pass national_codes to combine_datasets
+
+    # # Use provided image or combine datasets
+    # if img_combined is None:
+    #     img_combined = combine_datasets(national_codes=national_codes)
 
     out_feature_col = ee.FeatureCollection(
         feature_col.map(
@@ -651,6 +793,7 @@ def get_stats_fc(feature_col, national_codes=None, unit_type="ha"):
 
 
 # Get statistics for a single feature
+# Note: This function doesn't need whisp_image parameter since it already accepts img_combined directly
 
 
 def get_stats_feature(feature, img_combined, unit_type="ha"):
@@ -1132,3 +1275,46 @@ def debug_feature_collection_properties(feature_collection, max_features=5):
 
     except Exception as e:
         return {"error": f"Error during debugging: {str(e)}"}
+
+
+# helper function to set area to 0 for point geometries
+def set_point_geometry_area_to_zero(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Set the geometry area column to 0 for features with Point geometry type.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing geometry type and area columns
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with area set to 0 for Point geometries
+    """
+    # Check if required columns exist
+    if geometry_type_column not in df.columns:
+        print(
+            f"Warning: {geometry_type_column} column not found. Skipping area adjustment for points."
+        )
+        return df
+
+    if geometry_area_column not in df.columns:
+        print(
+            f"Warning: {geometry_area_column} column not found. Skipping area adjustment for points."
+        )
+        return df
+
+    # Create a copy to avoid modifying the original
+    df_modified = df.copy()
+
+    # Set area to 0 where geometry type is Point
+    point_mask = df_modified[geometry_type_column] == "Point"
+    df_modified.loc[point_mask, geometry_area_column] = 0.0
+
+    # Log the changes
+    num_points = point_mask.sum()
+    # if num_points > 0:
+    #     print(f"Set area to 0 for {num_points} Point geometries")
+
+    return df_modified

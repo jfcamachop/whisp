@@ -380,45 +380,20 @@ def g_esri_2023_tc_prep():
 
 
 # ESRI 2023 - Crop
-def g_esri_2023_crop_prep():
+def g_esri_2020_2023_crop_prep():
     esri_lulc10_raw = ee.ImageCollection(
         "projects/sat-io/open-datasets/landcover/ESRI_Global-LULC_10m_TS"
     )
-    esri_lulc10_crop = (
+    esri_lulc10_crop_2020 = (
+        esri_lulc10_raw.filterDate("2020-01-01", "2020-12-31").mosaic().eq(5)
+    )
+    esri_lulc10_crop_2023 = (
         esri_lulc10_raw.filterDate("2023-01-01", "2023-12-31").mosaic().eq(5)
     )
-    return esri_lulc10_crop.rename("ESRI_2023_crop")
 
+    newCrop = esri_lulc10_crop_2023.And(esri_lulc10_crop_2020.Not())
 
-# GLC_FCS30D 2022
-
-# GLC_FCS30D Tree Cover
-# forest classes + swamp + mangrove / what to do with shrubland?
-def g_glc_fcs30d_tc_2022_prep():
-    GLC_FCS30D = (
-        ee.ImageCollection("projects/sat-io/open-datasets/GLC-FCS30D/annual")
-        .mosaic()
-        .select(22)
-    )
-    GLC_FCS30D_TC = (
-        (GLC_FCS30D.gte(51))
-        .And(GLC_FCS30D.lte(92))
-        .Or(GLC_FCS30D.eq(181))
-        .Or(GLC_FCS30D.eq(185))
-    )
-    return GLC_FCS30D_TC.rename("GLC_FCS30D_TC_2022")
-
-
-# GLC_FCS30D crop
-# 10	Rainfed cropland; 11	Herbaceous cover; 12	Tree or shrub cover (Orchard); 20	Irrigated cropland
-def g_glc_fcs30d_crop_2022_prep():
-    GLC_FCS30D = (
-        ee.ImageCollection("projects/sat-io/open-datasets/GLC-FCS30D/annual")
-        .mosaic()
-        .select(22)
-    )
-    GLC_FCS30D_crop = GLC_FCS30D.gte(10).And(GLC_FCS30D.lte(20))
-    return GLC_FCS30D_crop.rename("GLC_FCS30D_crop_2022")
+    return newCrop.rename("ESRI_crop_gain_2020_2023")
 
 
 #### disturbances by year
@@ -1404,40 +1379,6 @@ def nci_ocs2020_prep():
 
 ###Combining datasets
 
-###Combining datasets
-
-# def combine_datasets():
-#     """Combines datasets into a single multiband image, with fallback if assets are missing."""
-#     img_combined = ee.Image(1).rename(geometry_area_column)
-
-#     # Combine images directly
-#     for img in [func() for func in list_functions()]:
-#         try:
-#             img_combined = img_combined.addBands(img)
-#         except ee.EEException as e:
-#             # logger.error(f"Error adding image: {e}")
-#             print(f"Error adding image: {e}")
-
-#     try:
-#         # Attempt to print band names to check for errors
-#         print(img_combined.bandNames().getInfo())
-#     except ee.EEException as e:
-#         # logger.error(f"Error printing band names: {e}")
-#         # logger.info("Running code for filtering to only valid datasets due to error in input")
-#         print("using valid datasets filter due to error in input")
-#         # Validate images
-#         images_to_test = [func() for func in list_functions()]
-#         valid_imgs = keep_valid_images(images_to_test)  # Validate images
-
-#         # Retry combining images after validation
-#         img_combined = ee.Image(1).rename(geometry_area_column)
-#         for img in valid_imgs:
-#             img_combined = img_combined.addBands(img)
-
-#     img_combined = img_combined.multiply(ee.Image.pixelArea())
-
-#     return img_combined
-
 
 def combine_datasets(national_codes=None):
     """Combines datasets into a single multiband image, with fallback if assets are missing."""
@@ -1569,5 +1510,32 @@ def ee_image_checker(image):
     return False
 
 
-# print(combine_valid_datasets().bandNames().getInfo())
-# print(combine_datasets().bandNames().getInfo())
+# preparation steps for multiband image with area per pixel values
+# function for notebook environment
+# user provides custom_images dict and custom_bands_info dict
+def combine_custom_bands(custom_images, custom_bands_info):
+    """
+    Combine custom Earth Engine images into a single multiband image with area conversion.
+
+    Returns
+    -------
+    ee.Image
+        Combined bands converted to area values
+    """
+    # ... existing validation code ...
+
+    # Step 3: Rename and combine images
+    band_names = list(custom_bands_info.keys())
+
+    # Start with first image
+    custom_ee_image = custom_images[band_names[0]].rename(band_names[0])
+
+    # Add remaining images if any
+    for name in band_names[1:]:
+        next_image = custom_images[name].rename(name)
+        custom_ee_image = custom_ee_image.addBands(next_image)
+
+    # Convert to area values
+    custom_ee_image = custom_ee_image.multiply(ee.Image.pixelArea())
+
+    return custom_ee_image  # Only return the image
