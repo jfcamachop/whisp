@@ -1,0 +1,46 @@
+name: Collect usage metrics
+
+# Runs weekly on Monday at 06:00 UTC — captures the 14-day GitHub traffic
+# window with overlap so no daily data is lost between runs.
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Every Monday at 06:00 UTC
+  workflow_dispatch:        # Allow manual trigger from GitHub UI
+
+concurrency:
+  group: usage-metrics
+  cancel-in-progress: true  # Only one run at a time; cancels stale runs
+
+permissions:
+  contents: write           # Needed to commit CSV updates
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install BigQuery client
+        run: pip install google-cloud-bigquery
+
+      - name: Collect metrics
+        # GCP_SA_KEY is a service account JSON key (repo secret) used for BigQuery
+        # country-level download stats. Without it, country data is simply skipped.
+        # PyPI and GitHub traffic stats work without it.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: python .github/usage_metrics/collect_metrics.py
+
+      - name: Commit updated files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/usage_metrics/usage_metrics.csv .github/usage_metrics/github_traffic.csv .github/usage_metrics/country_downloads.csv .github/USAGE_STATS.md
+          # Only commit if there are changes
+          git diff --cached --quiet || git commit -m "chore: weekly usage metrics snapshot [skip ci]"
+          git push
